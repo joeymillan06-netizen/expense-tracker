@@ -214,7 +214,7 @@ if(window.cloudReady){
   $('#pin').previousElementSibling.classList.add('hidden');
   $('#pin').classList.add('hidden');
   $('#cloud-fields').classList.remove('hidden');
-  $('.auth-form small').textContent='Private Supabase workspace';
+  $('.auth-form small').textContent='Our Financial Ledger';
   $('#login-form').onsubmit=async e=>{
     e.preventDefault();
     const submit=e.submitter;submit.disabled=true;submit.textContent='Signing in…';
