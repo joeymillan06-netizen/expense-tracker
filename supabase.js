@@ -46,9 +46,13 @@ async function loadCloudWorkspace(displayName = 'Member') {
 }
 
 async function persistCloudWorkspace(payload) {
+  const currentRows = await supabaseRequest(`/rest/v1/workspace_state?workspace_id=eq.${cloudConfig.workspaceId}&select=payload&limit=1`);
+  const merged = window.mergeWorkspaceData ? window.mergeWorkspaceData(payload, currentRows?.[0]?.payload || {}) : payload;
+  if (typeof data !== 'undefined') data = merged;
+  localStorage.setItem('ours-data-v2', JSON.stringify(merged));
   return supabaseRequest('/rest/v1/workspace_state?on_conflict=workspace_id', {
     method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal',
-    body: JSON.stringify({ workspace_id: cloudConfig.workspaceId, payload, updated_at: new Date().toISOString() })
+    body: JSON.stringify({ workspace_id: cloudConfig.workspaceId, payload: merged, updated_at: new Date().toISOString() })
   });
 }
 

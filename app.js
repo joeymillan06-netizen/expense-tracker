@@ -29,7 +29,7 @@ const seed = {
   plans:[{month:monthKey,income:8000,expenses:4400,savings:1500,debt:800}],
   activities:[{id:'a1',text:'Ama recorded GHS 750.00 repayment from Joey.',date:`${monthKey}-18`},{id:'a2',text:'Joey added GHS 120.00 for design software.',date:`${monthKey}-14`}]
 };
-const emptyData={transactions:[],debts:[],debtPayments:[],goals:[],customers:[],projects:[],work:[],invoices:[],invoicePayments:[],plans:[],activities:[],sharedExpenses:[],recurring:[],notifications:[]};
+const emptyData={transactions:[],debts:[],debtPayments:[],goals:[],customers:[],projects:[],work:[],invoices:[],invoicePayments:[],plans:[],activities:[],sharedExpenses:[],recurring:[],notifications:[],deletedCustomerIds:[]};
 let data = JSON.parse(localStorage.getItem('ours-data-v2')||'null') || structuredClone(emptyData);
 let state = {user:localStorage.getItem('ours-user')||'Joey',view:'home',tab:'all'};
 const save=()=>{localStorage.setItem('ours-data-v2',JSON.stringify(data));queueCloudSync()};
@@ -172,6 +172,32 @@ function ensureData(){
   if(!data || typeof data!=='object') data=structuredClone(emptyData);
   Object.keys(emptyData).forEach(key=>{if(!Array.isArray(data[key]))data[key]=[]});
 }
+function mergeWorkspaceData(local={},remote={}){
+  const merged=structuredClone(emptyData);
+  Object.keys(emptyData).forEach(key=>{
+    const values=[...(Array.isArray(remote[key])?remote[key]:[]),...(Array.isArray(local[key])?local[key]:[])];
+    const records=new Map();
+    values.forEach((item,index)=>{const identity=typeof item==='object'&&item!==null?(item.id||item.month||JSON.stringify(item)):String(item);records.set(identity,item)});
+    merged[key]=[...records.values()];
+  });
+  const deleted=new Set(merged.deletedCustomerIds);
+  merged.customers=merged.customers.filter(item=>!deleted.has(item.id));
+  merged.projects=merged.projects.filter(item=>!deleted.has(item.customerId));
+  merged.work=merged.work.filter(item=>!deleted.has(item.customerId));
+  const removedInvoices=new Set(merged.invoices.filter(item=>deleted.has(item.customerId)).map(item=>item.id));
+  merged.invoices=merged.invoices.filter(item=>!deleted.has(item.customerId));
+  merged.invoicePayments=merged.invoicePayments.filter(item=>!removedInvoices.has(item.invoiceId));
+  return merged;
+}
+window.mergeWorkspaceData=mergeWorkspaceData;
+
+let cloudRefreshTimer;
+async function refreshCloudData(){
+  if(!window.cloudReady||!localStorage.getItem('ours-access-token')||document.hidden)return;
+  try{const remote=await loadCloudWorkspace(state.user);if(!remote)return;const merged=mergeWorkspaceData(data,remote);if(JSON.stringify(merged)!==JSON.stringify(data)){data=merged;localStorage.setItem('ours-data-v2',JSON.stringify(data));render();await persistCloudWorkspace(merged)}}catch(error){console.warn('Cloud refresh delayed',error.message)}
+}
+function startCloudRefresh(){clearInterval(cloudRefreshTimer);refreshCloudData();cloudRefreshTimer=setInterval(refreshCloudData,10000)}
+function logout(){clearInterval(cloudRefreshTimer);localStorage.removeItem('ours-user');localStorage.removeItem('ours-access-token');localStorage.removeItem('ours-refresh-token');location.reload()}
 
 function handleAction(a){const map={'add-income':()=>openTransaction('income'),'add-expense':()=>openTransaction('expense'),'add-shared':openSharedExpense,'add-recurring':openRecurring,'add-debt':openDebt,'add-repayment':()=>data.debts.length?openRepayment(data.debts[0].id):toast('Add a debt first'),'add-goal':openGoal,'edit-plan':openPlanEditor,'add-customer':openCustomer,'add-project':openProject,'add-work':openWork,'add-invoice':openNewInvoice,review:openReview,agenda:openAgenda};(map[a]||(()=>{}))()}
 
@@ -195,6 +221,39 @@ function categoryBreakdown(tx){const expenses=tx.filter(t=>t.type==='expense'),t
 
 const originalBindView=bindView;
 bindView=function(){originalBindView();const person=$('#report-person'),category=$('#report-category');if(person){person.value=state.reportPerson||'All';person.onchange=()=>{state.reportPerson=person.value;render()}}if(category){category.value=state.reportCategory||'All';category.onchange=()=>{state.reportCategory=category.value;render()}}};
+const reportBindView=bindView;
+bindView=function(){reportBindView();const existing=$('#signout');if(existing)existing.onclick=logout;if(state.view==='more'&&!$('#logout-visible')){$('#view').insertAdjacentHTML('beforeend','<section class="section account-actions"><button class="danger-button" id="logout-visible">Log out of Our Financial Ledger</button></section>');$('#logout-visible').onclick=logout}};
+
+function openCustomerProfile(id){
+  const c=customer(id),invoices=data.invoices.filter(i=>i.customerId===id).sort((a,b)=>b.issue.localeCompare(a.issue));
+  const total=invoices.reduce((sum,invoice)=>sum+invoiceTotal(invoice),0),paid=invoices.filter(invoice=>invoice.status==='Paid').reduce((sum,invoice)=>sum+invoiceTotal(invoice),0);
+  openSheet(c.name,`<div class="customer-heading"><div class="customer-monogram">${c.name[0]}</div><div><b>${c.company||c.name}</b><span>${c.email||''}${c.phone?` · ${c.phone}`:''}</span></div></div><div class="snapshot"><div class="snap"><b>${money(total)}</b><span>Total invoiced</span></div><div class="snap"><b>${money(total-paid)}</b><span>Outstanding</span></div></div><section class="section"><div class="section-title"><h2>Invoice history</h2><button class="text-button" id="customer-new-invoice">New invoice</button></div><ul class="clean-list">${invoices.length?invoices.map(i=>`<li class="list-row tappable" data-profile-invoice="${i.id}"><span class="row-icon">I</span><span class="row-main"><b>${i.number}</b><span>${prettyDate(i.issue)} · ${i.items.length} item${i.items.length===1?'':'s'}</span></span><span class="row-side"><b>${money(invoiceTotal(i))}</b><span class="status ${i.status==='Paid'?'':'warn'}">${i.status}</span></span></li>`).join(''):'<div class="empty"><b>No invoices yet</b>Create the first invoice for this customer.</div>'}</ul></section><section class="section"><button class="danger-button" id="delete-customer">Delete customer and related records</button></section>`);
+  $('#customer-new-invoice').onclick=()=>openInvoiceBuilder(null,id);
+  $$('[data-profile-invoice]').forEach(item=>item.onclick=()=>openInvoice(item.dataset.profileInvoice));
+  $('#delete-customer').onclick=()=>{if(!confirm(`Delete ${c.name}, their projects, work entries and invoices?`))return;const invoiceIds=new Set(data.invoices.filter(item=>item.customerId===id).map(item=>item.id));data.deletedCustomerIds.push(id);data.customers=data.customers.filter(item=>item.id!==id);data.projects=data.projects.filter(item=>item.customerId!==id);data.work=data.work.filter(item=>item.customerId!==id);data.invoices=data.invoices.filter(item=>item.customerId!==id);data.invoicePayments=data.invoicePayments.filter(item=>!invoiceIds.has(item.invoiceId));activity(`${state.user} deleted customer ${c.name}.`);save();closeSheet();render();toast('Customer deleted')};
+}
+
+function downloadInvoice(invoice){
+  const client=customer(invoice.customerId),escapePdf=value=>String(value??'').replace(/[^\x20-\x7E]/g,' ').replace(/([\\()])/g,'\\$1');
+  const pages=[];for(let index=0;index<invoice.items.length;index+=15)pages.push(invoice.items.slice(index,index+15));if(!pages.length)pages.push([]);
+  const streams=pages.map((items,pageIndex)=>{
+    const commands=[],write=(x,y,size,value,bold=false,color='0.145 0.161 0.263')=>commands.push(`${color} rg BT /F${bold?2:1} ${size} Tf ${x} ${y} Td (${escapePdf(value)}) Tj ET`);
+    commands.push('0.227 0.306 0.984 rg 0 760 612 32 re f');
+    write(44,724,18,'Joey | Visual Designer',true,'0.227 0.306 0.984');write(44,704,9,'CREATIVE SERVICES  /  ACCRA, GHANA');
+    write(568,724,17,'INVOICE',true);write(568,706,9,`${invoice.number}  /  ${pageIndex+1} of ${pages.length}`);
+    write(44,655,8,'BILLED TO',true,'0.227 0.306 0.984');write(44,635,13,client.name,true);write(44,618,9,client.email||'');
+    write(410,655,8,'INVOICE DETAILS',true,'0.227 0.306 0.984');write(410,635,9,`Date: ${invoice.issue}`);write(410,618,9,`Due: ${invoice.due}`);write(410,601,9,`Status: ${invoice.status}`,true);
+    commands.push('0.871 0.878 0.929 RG 44 578 m 568 578 l S');write(44,555,8,'DESCRIPTION',true);write(365,555,8,'QTY',true);write(422,555,8,'UNIT PRICE',true);write(525,555,8,'TOTAL',true);
+    let y=530;items.forEach(item=>{write(44,y,9,item.description.slice(0,48));write(380,y,9,item.qty);write(432,y,9,money(item.rate));write(520,y,9,money(item.qty*item.rate),true);commands.push(`0.92 0.925 0.95 RG 44 ${y-11} m 568 ${y-11} l S`);y-=29});
+    if(pageIndex===pages.length-1){const total=invoiceTotal(invoice);y=Math.max(78,y-8);write(410,y,9,'SUBTOTAL');write(500,y,10,money(total),true);y-=25;write(410,y,12,'TOTAL',true);write(500,y,14,money(total),true,'0.227 0.306 0.984')}
+    write(44,40,8,'Thank you for your business.',false,'0.435 0.451 0.533');return commands.join('\n');
+  });
+  const objects=[null,'<< /Type /Catalog /Pages 2 0 R >>','', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>'],pageIds=[];
+  streams.forEach(stream=>{const pageId=objects.length,contentId=pageId+1;pageIds.push(pageId);objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`);objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`)});
+  objects[2]=`<< /Type /Pages /Kids [${pageIds.map(id=>`${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
+  let pdf='%PDF-1.4\n',offsets=[0];for(let index=1;index<objects.length;index++){offsets[index]=pdf.length;pdf+=`${index} 0 obj\n${objects[index]}\nendobj\n`}const xref=pdf.length;pdf+=`xref\n0 ${objects.length}\n0000000000 65535 f \n`;for(let index=1;index<objects.length;index++)pdf+=`${String(offsets[index]).padStart(10,'0')} 00000 n \n`;pdf+=`trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  const blob=new Blob([pdf],{type:'application/pdf'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`${invoice.number}-${client.name.replace(/[^a-z0-9]+/gi,'-')}.pdf`;link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);toast('PDF invoice downloaded');
+}
 
 ensureData();
 
@@ -205,7 +264,7 @@ if(localStorage.getItem('ours-user')==='Ama')localStorage.setItem('ours-user','G
 save();
 
 // Keep legacy literal labels compatible while all new stored values use Grace.
-function renameLegacyText(root){const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node;while(node=walker.nextNode())if(/\bAma\b/.test(node.nodeValue))node.nodeValue=node.nodeValue.replace(/\bAma\b/g,'Grace')}
+function renameLegacyText(root){const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node;while(node=walker.nextNode()){if(/\bAma\b/.test(node.nodeValue))node.nodeValue=node.nodeValue.replace(/\bAma\b/g,'Grace');if(node.nodeValue.trim()==='OURS.')node.nodeValue=node.nodeValue.replace('OURS.','Joey | Visual Designer')}}
 new MutationObserver(records=>records.forEach(r=>r.addedNodes.forEach(n=>{if(n.nodeType===1||n.nodeType===3)renameLegacyText(n)}))).observe(document.body,{childList:true,subtree:true});
 function options(arr,val=x=>x,label=x=>x){return arr.map(x=>{const value=val(x)==='Ama'?'Grace':val(x),display=label(x)==='Ama'?'Grace':label(x);return `<option value="${value}">${display}</option>`}).join('')}
 
@@ -229,9 +288,12 @@ if(window.cloudReady){
     const submit=e.submitter;submit.disabled=true;submit.textContent='Signing in…';
     try{
       await signInWithSupabase($('#cloud-email').value,$('#cloud-password').value);
-      const remote=await loadCloudWorkspace(state.user);if(remote)data=remote;else await persistCloudWorkspace(data);
+      const remote=await loadCloudWorkspace(state.user);if(remote)data=mergeWorkspaceData(data,remote);else await persistCloudWorkspace(data);
       ensureData();save();localStorage.setItem('ours-user',state.user);
-      $('#auth').classList.add('hidden');$('#app').classList.remove('hidden');render();toast('Private workspace connected');
+      $('#auth').classList.add('hidden');$('#app').classList.remove('hidden');render();startCloudRefresh();toast('Private workspace connected');
     }catch(error){toast(error.message)}finally{submit.disabled=false;submit.innerHTML='Enter our space <span>→</span>'}
   };
 }
+if(window.cloudReady&&localStorage.getItem('ours-access-token'))startCloudRefresh();
+window.addEventListener('focus',refreshCloudData);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshCloudData()});
