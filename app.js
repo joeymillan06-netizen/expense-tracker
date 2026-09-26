@@ -162,7 +162,10 @@ function downloadInvoice(i){
 }
 
 /* Remaining V1 finance, planning, agenda, project and report workflows */
-function ensureData(){data.sharedExpenses ||= [];data.recurring ||= [{id:'r1',name:'Home fibre',amount:300,category:'Internet',paidBy:'Joey',frequency:'Monthly',next:iso(new Date(Date.now()+10*864e5)),active:true},{id:'r2',name:'Design software',amount:120,category:'Subscriptions',paidBy:'Joey',frequency:'Monthly',next:iso(new Date(Date.now()+18*864e5)),active:true}];data.notifications ||= []}
+function ensureData(){
+  if(!data || typeof data!=='object') data=structuredClone(emptyData);
+  Object.keys(emptyData).forEach(key=>{if(!Array.isArray(data[key]))data[key]=[]});
+}
 
 function handleAction(a){const map={'add-income':()=>openTransaction('income'),'add-expense':()=>openTransaction('expense'),'add-shared':openSharedExpense,'add-recurring':openRecurring,'add-debt':openDebt,'add-repayment':()=>data.debts.length?openRepayment(data.debts[0].id):toast('Add a debt first'),'add-goal':openGoal,'edit-plan':openPlanEditor,'add-customer':openCustomer,'add-project':openProject,'add-work':openWork,'add-invoice':openNewInvoice,review:openReview,agenda:openAgenda};(map[a]||(()=>{}))()}
 
