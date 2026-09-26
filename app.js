@@ -220,7 +220,7 @@ if(window.cloudReady){
     const submit=e.submitter;submit.disabled=true;submit.textContent='Signing in…';
     try{
       await signInWithSupabase($('#cloud-email').value,$('#cloud-password').value);
-      const remote=await loadCloudWorkspace();if(remote)data=remote;else await persistCloudWorkspace(data);
+      const remote=await loadCloudWorkspace(state.user);if(remote)data=remote;else await persistCloudWorkspace(data);
       ensureData();save();localStorage.setItem('ours-user',state.user);
       $('#auth').classList.add('hidden');$('#app').classList.remove('hidden');render();toast('Private workspace connected');
     }catch(error){toast(error.message)}finally{submit.disabled=false;submit.innerHTML='Enter our space <span>→</span>'}

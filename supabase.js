@@ -1,5 +1,5 @@
 const cloudConfig = window.OURS_CONFIG || {};
-const cloudReady = Boolean(cloudConfig.supabaseUrl && cloudConfig.supabaseAnonKey && cloudConfig.workspaceId);
+const cloudReady = Boolean(cloudConfig.supabaseUrl && cloudConfig.supabaseAnonKey);
 let cloudTimer;
 
 async function supabaseRequest(path, options = {}) {
@@ -31,7 +31,16 @@ async function signInWithSupabase(email, password) {
   return session.user;
 }
 
-async function loadCloudWorkspace() {
+async function loadCloudWorkspace(displayName = 'Member') {
+  if (!cloudConfig.workspaceId) {
+    let memberships = await supabaseRequest('/rest/v1/workspace_members?select=workspace_id&limit=1');
+    if (!memberships?.length) {
+      const created = await supabaseRequest('/rest/v1/rpc/bootstrap_finance_workspace', {
+        method: 'POST', body: JSON.stringify({ member_name: displayName })
+      });
+      cloudConfig.workspaceId = typeof created === 'string' ? created : created?.workspace_id || created;
+    } else cloudConfig.workspaceId = memberships[0].workspace_id;
+  }
   const rows = await supabaseRequest(`/rest/v1/workspace_state?workspace_id=eq.${cloudConfig.workspaceId}&select=payload&limit=1`);
   return rows?.[0]?.payload || null;
 }
