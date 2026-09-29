@@ -4,7 +4,7 @@ let cloudTimer;
 
 async function supabaseRequest(path, options = {}) {
   if (!cloudReady) return null;
-  const response = await fetch(`${cloudConfig.supabaseUrl}${path}`, {
+  const request = () => fetch(`${cloudConfig.supabaseUrl}${path}`, {
     ...options,
     headers: {
       apikey: cloudConfig.supabaseAnonKey,
@@ -14,8 +14,27 @@ async function supabaseRequest(path, options = {}) {
       ...(options.headers || {})
     }
   });
+  let response = await request();
+  if (response.status === 401 && localStorage.getItem('ours-refresh-token')) {
+    await refreshSupabaseSession();
+    response = await request();
+  }
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message || 'Cloud request failed');
   return response.status === 204 ? null : response.json();
+}
+
+async function refreshSupabaseSession() {
+  const refreshToken = localStorage.getItem('ours-refresh-token');
+  if (!refreshToken) throw new Error('Your session has expired. Please log in again.');
+  const response = await fetch(`${cloudConfig.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST', headers: { apikey: cloudConfig.supabaseAnonKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken })
+  });
+  const session = await response.json();
+  if (!response.ok) { localStorage.removeItem('ours-access-token'); localStorage.removeItem('ours-refresh-token'); throw new Error('Your session has expired. Please log in again.'); }
+  localStorage.setItem('ours-access-token', session.access_token);
+  localStorage.setItem('ours-refresh-token', session.refresh_token);
+  return session;
 }
 
 async function signInWithSupabase(email, password) {

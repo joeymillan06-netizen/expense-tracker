@@ -174,10 +174,11 @@ function ensureData(){
   if(!data || typeof data!=='object') data=structuredClone(emptyData);
   Object.keys(emptyData).forEach(key=>{if(!Array.isArray(data[key]))data[key]=[]});
 }
-function mergeWorkspaceData(local={},remote={}){
+function mergeWorkspaceData(local={},remote={},preference='local'){
   const merged=structuredClone(emptyData);
   Object.keys(emptyData).forEach(key=>{
-    const values=[...(Array.isArray(remote[key])?remote[key]:[]),...(Array.isArray(local[key])?local[key]:[])];
+    const localValues=Array.isArray(local[key])?local[key]:[],remoteValues=Array.isArray(remote[key])?remote[key]:[];
+    const values=preference==='remote'?[...localValues,...remoteValues]:[...remoteValues,...localValues];
     const records=new Map();
     values.forEach((item,index)=>{const identity=typeof item==='object'&&item!==null?(item.id||item.month||JSON.stringify(item)):String(item);records.set(identity,item)});
     merged[key]=[...records.values()];
@@ -192,11 +193,12 @@ function mergeWorkspaceData(local={},remote={}){
   return merged;
 }
 window.mergeWorkspaceData=mergeWorkspaceData;
+function hasLocalRecordsMissingRemotely(local={},remote={}){return Object.keys(emptyData).some(key=>{const remoteIds=new Set((Array.isArray(remote[key])?remote[key]:[]).map(item=>typeof item==='object'&&item!==null?(item.id||item.month||JSON.stringify(item)):String(item)));return (Array.isArray(local[key])?local[key]:[]).some(item=>!remoteIds.has(typeof item==='object'&&item!==null?(item.id||item.month||JSON.stringify(item)):String(item)))})}
 
 let cloudRefreshTimer;
 async function refreshCloudData(){
   if(!window.cloudReady||!localStorage.getItem('ours-access-token')||document.hidden)return;
-  try{const remote=await loadCloudWorkspace(state.user);if(!remote)return;const merged=mergeWorkspaceData(data,remote);if(JSON.stringify(merged)!==JSON.stringify(data)){data=merged;localStorage.setItem('ours-data-v2',JSON.stringify(data));render();await persistCloudWorkspace(merged)}}catch(error){console.warn('Cloud refresh delayed',error.message)}
+  try{const remote=await loadCloudWorkspace(state.user);if(!remote)return;const needsUpload=hasLocalRecordsMissingRemotely(data,remote),merged=mergeWorkspaceData(data,remote,'remote');if(JSON.stringify(merged)!==JSON.stringify(data)){data=merged;localStorage.setItem('ours-data-v2',JSON.stringify(data));render()}if(needsUpload)await persistCloudWorkspace(merged)}catch(error){console.warn('Cloud refresh delayed',error.message)}
 }
 function startCloudRefresh(){clearInterval(cloudRefreshTimer);refreshCloudData();cloudRefreshTimer=setInterval(refreshCloudData,10000)}
 function logout(){clearInterval(cloudRefreshTimer);localStorage.removeItem('ours-user');localStorage.removeItem('ours-access-token');localStorage.removeItem('ours-refresh-token');location.reload()}
@@ -306,7 +308,7 @@ if(window.cloudReady){
     const submit=e.submitter;submit.disabled=true;submit.textContent='Signing in…';
     try{
       await signInWithSupabase($('#cloud-email').value,$('#cloud-password').value);
-      const remote=await loadCloudWorkspace(state.user);if(remote)data=mergeWorkspaceData(data,remote);else await persistCloudWorkspace(data);
+      const remote=await loadCloudWorkspace(state.user);if(remote)data=mergeWorkspaceData(data,remote,'remote');else await persistCloudWorkspace(data);
       ensureData();save();localStorage.setItem('ours-user',state.user);
       $('#auth').classList.add('hidden');$('#app').classList.remove('hidden');render();startCloudRefresh();toast('Private workspace connected');
     }catch(error){toast(error.message)}finally{submit.disabled=false;submit.innerHTML='Enter our space <span>→</span>'}
