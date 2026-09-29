@@ -57,6 +57,7 @@ function init(){
   $$('#login-form .person').forEach(b=>b.onclick=()=>{$$('.person').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.user=b.dataset.person});
   $('#login-form').onsubmit=e=>{e.preventDefault();if($('#pin').value!=='2026')return toast('That access code is incorrect');localStorage.setItem('ours-user',state.user);$('#auth').classList.add('hidden');$('#app').classList.remove('hidden');render()};
   $('#fab').onclick=()=>openQuick(); $('#overlay').onclick=closeSheet; $('#search-btn').onclick=openSearch;
+  $('#sync-btn').onclick=manualSync;
   $('#profile-btn').onclick=()=>openSheet('Your workspace',`<div class="section"><p><b>${state.user}</b><br><span style="color:var(--muted)">Shared securely with ${state.user==='Joey'?'Ama':'Joey'}</span></p></div><button class="secondary" id="signout">Lock workspace</button>`); 
   if(localStorage.getItem('ours-user')){$('#auth').classList.add('hidden');$('#app').classList.remove('hidden');render()}
 }
@@ -201,6 +202,12 @@ async function refreshCloudData(){
   try{const remote=await loadCloudWorkspace(state.user);if(!remote)return;const needsUpload=hasLocalRecordsMissingRemotely(data,remote),merged=mergeWorkspaceData(data,remote,'remote');if(JSON.stringify(merged)!==JSON.stringify(data)){data=merged;localStorage.setItem('ours-data-v2',JSON.stringify(data));render()}if(needsUpload)await persistCloudWorkspace(merged)}catch(error){console.warn('Cloud refresh delayed',error.message)}
 }
 function startCloudRefresh(){clearInterval(cloudRefreshTimer);refreshCloudData();cloudRefreshTimer=setInterval(refreshCloudData,10000)}
+async function manualSync(){
+  const button=$('#sync-btn');if(!window.cloudReady||!localStorage.getItem('ours-access-token'))return toast('Log in to sync your ledger');
+  button?.classList.add('syncing');button&&(button.disabled=true);
+  try{const localSnapshot=structuredClone(data),remote=await loadCloudWorkspace(state.user),merged=mergeWorkspaceData(localSnapshot,remote||{},'local');await persistCloudWorkspace(merged);data=merged;localStorage.setItem('ours-data-v2',JSON.stringify(data));render();toast('Ledger synced successfully')}
+  catch(error){toast(`Sync failed: ${error.message}`)}finally{button?.classList.remove('syncing');if(button)button.disabled=false}
+}
 function logout(){clearInterval(cloudRefreshTimer);localStorage.removeItem('ours-user');localStorage.removeItem('ours-access-token');localStorage.removeItem('ours-refresh-token');location.reload()}
 
 function handleAction(a){const map={'add-income':()=>openTransaction('income'),'add-expense':()=>openTransaction('expense'),'add-shared':openSharedExpense,'add-recurring':openRecurring,'add-debt':openDebt,'add-repayment':()=>data.debts.length?openRepayment(data.debts[0].id):toast('Add a debt first'),'add-goal':openGoal,'edit-plan':openPlanEditor,'add-customer':openCustomer,'add-project':openProject,'add-work':openWork,'add-invoice':openNewInvoice,review:openReview,agenda:openAgenda};(map[a]||(()=>{}))()}
