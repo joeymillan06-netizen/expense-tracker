@@ -181,7 +181,7 @@ function mergeWorkspaceData(local={},remote={},preference='local'){
     const localValues=Array.isArray(local[key])?local[key]:[],remoteValues=Array.isArray(remote[key])?remote[key]:[];
     const values=preference==='remote'?[...localValues,...remoteValues]:[...remoteValues,...localValues];
     const records=new Map();
-    values.forEach((item,index)=>{const identity=typeof item==='object'&&item!==null?(item.id||item.month||JSON.stringify(item)):String(item);records.set(identity,item)});
+    values.forEach(item=>{let identity;if(key==='transactions'&&item&&typeof item==='object')identity=`transaction|${item.date}|${item.type}|${Number(item.amount)||0}|${item.person}|${item.category}|${String(item.description||'').trim().toLowerCase().slice(0,20)}`;else identity=typeof item==='object'&&item!==null?(item.id||item.month||JSON.stringify(item)):String(item);records.set(identity,item)});
     merged[key]=[...records.values()];
   });
   const deleted=new Set(merged.deletedCustomerIds);
