@@ -184,6 +184,14 @@ function mergeWorkspaceData(local={},remote={},preference='local'){
     values.forEach(item=>{let identity;if(key==='transactions'&&item&&typeof item==='object')identity=`transaction|${item.date}|${item.type}|${Number(item.amount)||0}|${item.person}|${item.category}|${String(item.description||'').trim().toLowerCase().slice(0,20)}`;else identity=typeof item==='object'&&item!==null?(item.id||item.month||JSON.stringify(item)):String(item);records.set(identity,item)});
     merged[key]=[...records.values()];
   });
+  const genuineTransactionKeys=new Set(merged.transactions
+    .filter(item=>!String(item.id||'').startsWith('recovered-grace-'))
+    .map(item=>`${item.date}|${item.type}|${Number(item.amount)||0}|${item.person}|${item.category}`));
+  merged.transactions=merged.transactions.filter(item=>{
+    if(!String(item.id||'').startsWith('recovered-grace-'))return true;
+    const key=`${item.date}|${item.type}|${Number(item.amount)||0}|${item.person}|${item.category}`;
+    return !genuineTransactionKeys.has(key);
+  });
   const deleted=new Set(merged.deletedCustomerIds);
   merged.customers=merged.customers.filter(item=>!deleted.has(item.id));
   merged.projects=merged.projects.filter(item=>!deleted.has(item.customerId));
