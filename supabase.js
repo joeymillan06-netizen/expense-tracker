@@ -20,7 +20,9 @@ async function supabaseRequest(path, options = {}) {
     response = await request();
   }
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message || 'Cloud request failed');
-  return response.status === 204 ? null : response.json();
+  if (response.status === 204) return null;
+  const body = await response.text();
+  return body ? JSON.parse(body) : null;
 }
 
 async function refreshSupabaseSession() {
