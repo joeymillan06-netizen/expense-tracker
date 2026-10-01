@@ -270,8 +270,10 @@ function downloadInvoiceProfessional(invoice){
     commands.push('0.227 0.306 0.984 rg 0 760 612 32 re f');
     write(44,724,18,'Joey | Visual Designer',true,'0.227 0.306 0.984');write(44,704,9,'CREATIVE SERVICES  /  ACCRA, GHANA');
     write(568,724,17,'INVOICE',true);write(568,706,9,`${invoice.number}  /  ${pageIndex+1} of ${pages.length}`);
-    write(44,655,8,'BILLED TO',true,'0.227 0.306 0.984');write(44,635,13,client.name,true);write(44,618,9,client.email||'');
-    write(410,655,8,'INVOICE DETAILS',true,'0.227 0.306 0.984');write(410,635,9,`Date: ${invoice.issue}`);write(410,618,9,`Due: ${invoice.due}`);write(410,601,9,`Status: ${invoice.status}`,true);
+    const detailsTop=invoice.title?645:655;
+    if(invoice.title){write(44,683,8,'INVOICE TITLE',true,'0.227 0.306 0.984');write(44,664,12,invoice.title.slice(0,68),true)}
+    write(44,detailsTop,8,'BILLED TO',true,'0.227 0.306 0.984');write(44,detailsTop-20,13,client.name,true);write(44,detailsTop-37,9,client.email||'');
+    write(410,detailsTop,8,'INVOICE DETAILS',true,'0.227 0.306 0.984');write(410,detailsTop-20,9,`Date: ${invoice.issue}`);write(410,detailsTop-37,9,`Due: ${invoice.due}`);write(410,detailsTop-54,9,`Status: ${invoice.status}`,true);
     commands.push('0.871 0.878 0.929 RG 44 578 m 568 578 l S');write(44,555,8,'DESCRIPTION',true);write(365,555,8,'QTY',true);write(422,555,8,'UNIT PRICE',true);write(525,555,8,'TOTAL',true);
     let y=530;items.forEach(item=>{write(44,y,9,item.description.slice(0,48));write(380,y,9,item.qty);write(432,y,9,money(item.rate));write(520,y,9,money(item.qty*item.rate),true);commands.push(`0.92 0.925 0.95 RG 44 ${y-11} m 568 ${y-11} l S`);y-=29});
     if(pageIndex===pages.length-1){const subtotal=invoiceSubtotal(invoice),discount=invoiceDiscount(invoice),total=invoiceTotal(invoice);y=Math.max(105,y-8);write(410,y,9,'SUBTOTAL');write(500,y,10,money(subtotal),true);if(discount>0){y-=22;write(410,y,9,invoice.discountType==='percent'?`DISCOUNT (${invoice.discountValue}%)`:'DISCOUNT');write(500,y,10,`- ${money(discount)}`,true)}y-=25;write(410,y,12,'TOTAL',true);write(500,y,14,money(total),true,'0.227 0.306 0.984')}
@@ -288,17 +290,25 @@ const baseOpenInvoiceBuilder=openInvoiceBuilder;
 openInvoiceBuilder=function(invoiceId=null,presetCustomer=''){
   baseOpenInvoiceBuilder(invoiceId,presetCustomer);
   const invoice=invoiceId?data.invoices.find(item=>item.id===invoiceId):null,builder=$('#invoice-builder'),totals=$('.builder-totals');if(!builder||!totals)return;
+  builder.querySelector('.invoice-details')?.insertAdjacentHTML('afterbegin',`<div class="field full invoice-title-field"><label>Invoice title <small>(optional)</small></label><input id="invoice-title" type="text" maxlength="120" value="${escapeHtml(invoice?.title||'')}" placeholder="e.g. Graphics for August and September"></div>`);
   const type=invoice?.discountType||(invoice?.discount?'fixed':'none'),value=invoice?.discountValue??invoice?.discount??0;
   totals.insertAdjacentHTML('beforebegin',`<div class="discount-panel"><div class="section-title"><h3>Discount</h3><span>Optional</span></div><div class="discount-fields"><div class="field"><label>Discount type</label><select id="discount-type"><option value="none">No discount</option><option value="percent">Percentage (%)</option><option value="fixed">Fixed amount (GHS)</option></select></div><div class="field" id="discount-value-field"><label>Discount value</label><input id="discount-value" type="number" min="0" step="0.01" value="${value}"></div></div></div>`);
   $('#discount-type').value=type;
   const recalculate=()=>{const subtotal=$$('.invoice-edit-row').reduce((sum,row)=>sum+(+row.querySelector('.item-qty').value||0)*(+row.querySelector('.item-rate').value||0),0),discountType=$('#discount-type').value,discountValue=+$('#discount-value').value||0,discount=discountType==='percent'?Math.min(subtotal,subtotal*discountValue/100):discountType==='fixed'?Math.min(subtotal,discountValue):0;$('#discount-value-field').classList.toggle('hidden',discountType==='none');$('#builder-subtotal').textContent=money(subtotal);let discountRow=$('#builder-discount');if(!discountRow){$('#builder-subtotal').insertAdjacentHTML('afterend','<span id="builder-discount-label">Discount</span><b id="builder-discount"></b>');discountRow=$('#builder-discount')}$('#builder-discount-label').classList.toggle('hidden',discountType==='none');discountRow.classList.toggle('hidden',discountType==='none');discountRow.textContent=`− ${money(discount)}`;$('#builder-total').textContent=money(subtotal-discount)};
   builder.addEventListener('input',()=>setTimeout(recalculate));builder.addEventListener('click',event=>{if(event.target.closest('#add-product,.remove-item'))setTimeout(recalculate)});$('#discount-type').onchange=recalculate;
-  const originalSubmit=builder.onsubmit;builder.onsubmit=event=>{const discountType=$('#discount-type').value,discountValue=discountType==='none'?0:+$('#discount-value').value||0,number=invoice?.number||builder.querySelector('input[readonly]').value;originalSubmit(event);const saved=data.invoices.find(item=>item.number===number);if(saved){saved.discountType=discountType;saved.discountValue=discountValue;saved.discount=discountType==='fixed'?discountValue:0;save()}};
+  const originalSubmit=builder.onsubmit;builder.onsubmit=event=>{const title=$('#invoice-title').value.trim(),discountType=$('#discount-type').value,discountValue=discountType==='none'?0:+$('#discount-value').value||0,number=invoice?.number||builder.querySelector('input[readonly]').value;originalSubmit(event);const saved=data.invoices.find(item=>item.number===number);if(saved){saved.title=title;saved.discountType=discountType;saved.discountValue=discountValue;saved.discount=discountType==='fixed'?discountValue:0;save()}};
   recalculate();
 };
 
 const baseOpenInvoice=openInvoice;
 openInvoice=function(id){baseOpenInvoice(id);const invoice=data.invoices.find(item=>item.id===id),discount=invoice?invoiceDiscount(invoice):0;if(!invoice)return;const subtotal=$('.invoice-summary>div:first-child b');if(subtotal)subtotal.textContent=money(invoiceSubtotal(invoice));if(discount<=0)return;const grand=$('.invoice-summary .grand-total');if(grand)grand.insertAdjacentHTML('beforebegin',`<div><span>${invoice.discountType==='percent'?`Discount (${invoice.discountValue}%)`:'Discount'}</span><b>− ${money(discount)}</b></div>`)};
+
+const baseOpenInvoiceWithDiscount=openInvoice;
+openInvoice=function(id){
+  baseOpenInvoiceWithDiscount(id);
+  const invoice=data.invoices.find(item=>item.id===id);
+  if(invoice?.title)$('.invoice-brand')?.insertAdjacentHTML('afterend',`<div class="invoice-title-display"><small>INVOICE TITLE</small><b>${escapeHtml(invoice.title)}</b></div>`);
+};
 
 ensureData();
 

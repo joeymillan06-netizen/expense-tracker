@@ -69,5 +69,6 @@ body{font-size:14px}
 @media(min-width:800px){.page-head h1{font-size:34px}.hero-number{font-size:48px}}
 .chart-empty{height:150px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);text-align:center}.chart-empty>span{font-size:18px;color:var(--green);margin-bottom:7px}.chart-empty b{color:var(--ink);font-size:13px}.chart-empty small{font-size:10px;margin-top:4px}
 .discount-panel{margin-top:20px;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.discount-panel .section-title{margin-bottom:12px}.discount-panel h3{margin:0;font-size:14px}.discount-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.builder-totals #builder-discount{color:var(--green)}
+.invoice-title-field{grid-column:1/-1}.invoice-title-display{display:grid;gap:5px;margin:22px 0 4px;padding:14px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.invoice-title-display small{color:var(--green);font-size:9px;letter-spacing:.12em}.invoice-title-display b{font-size:17px}
 @media(max-width:420px){.discount-fields{grid-template-columns:1fr}}
 #sync-btn.syncing{animation:syncspin .8s linear infinite;color:var(--green)}@keyframes syncspin{to{transform:rotate(360deg)}}
