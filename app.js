@@ -276,7 +276,12 @@ function downloadInvoiceProfessional(invoice){
     write(410,detailsTop,8,'INVOICE DETAILS',true,'0.227 0.306 0.984');write(410,detailsTop-20,9,`Date: ${invoice.issue}`);write(410,detailsTop-37,9,`Due: ${invoice.due}`);write(410,detailsTop-54,9,`Status: ${invoice.status}`,true);
     commands.push('0.871 0.878 0.929 RG 44 578 m 568 578 l S');write(44,555,8,'DESCRIPTION',true);write(365,555,8,'QTY',true);write(422,555,8,'UNIT PRICE',true);write(525,555,8,'TOTAL',true);
     let y=530;items.forEach(item=>{write(44,y,9,item.description.slice(0,48));write(380,y,9,item.qty);write(432,y,9,money(item.rate));write(520,y,9,money(item.qty*item.rate),true);commands.push(`0.92 0.925 0.95 RG 44 ${y-11} m 568 ${y-11} l S`);y-=29});
-    if(pageIndex===pages.length-1){const subtotal=invoiceSubtotal(invoice),discount=invoiceDiscount(invoice),total=invoiceTotal(invoice);y=Math.max(105,y-8);write(410,y,9,'SUBTOTAL');write(500,y,10,money(subtotal),true);if(discount>0){y-=22;write(410,y,9,invoice.discountType==='percent'?`DISCOUNT (${invoice.discountValue}%)`:'DISCOUNT');write(500,y,10,`- ${money(discount)}`,true)}y-=25;write(410,y,12,'TOTAL',true);write(500,y,14,money(total),true,'0.227 0.306 0.984')}
+    if(pageIndex===pages.length-1){
+      const subtotal=invoiceSubtotal(invoice),discount=invoiceDiscount(invoice),total=invoiceTotal(invoice),paid=invoicePaid(invoice),balance=invoiceBalance(invoice),payments=data.invoicePayments.filter(payment=>payment.invoiceId===invoice.id).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+      y=Math.max(180,y-8);
+      if(payments.length){write(44,y,8,'PAYMENTS RECEIVED',true,'0.227 0.306 0.984');payments.slice(0,4).forEach((payment,index)=>{const reference=payment.reference?` / ${payment.reference}`:'';write(44,y-20-(index*17),8,`${payment.date} / ${payment.method||'Payment'}${reference}`);write(280,y-20-(index*17),8,money(payment.amount),true)})}
+      write(410,y,9,'SUBTOTAL');write(500,y,10,money(subtotal),true);if(discount>0){y-=22;write(410,y,9,invoice.discountType==='percent'?`DISCOUNT (${invoice.discountValue}%)`:'DISCOUNT');write(500,y,10,`- ${money(discount)}`,true)}y-=25;write(410,y,12,'TOTAL');write(500,y,14,money(total),true,'0.227 0.306 0.984');y-=23;write(410,y,9,'AMOUNT PAID');write(500,y,10,money(paid),true);y-=25;write(410,y,12,'BALANCE DUE',true);write(500,y,14,money(balance),true,balance>0?'0.82 0.18 0.28':'0.227 0.306 0.984')
+    }
     write(44,40,8,'Thank you for your business.',false,'0.435 0.451 0.533');return commands.join('\n');
   });
   const objects=[null,'<< /Type /Catalog /Pages 2 0 R >>','', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>'],pageIds=[];
@@ -308,6 +313,25 @@ openInvoice=function(id){
   baseOpenInvoiceWithDiscount(id);
   const invoice=data.invoices.find(item=>item.id===id);
   if(invoice?.title)$('.invoice-brand')?.insertAdjacentHTML('afterend',`<div class="invoice-title-display"><small>INVOICE TITLE</small><b>${escapeHtml(invoice.title)}</b></div>`);
+};
+
+const baseOpenInvoiceWithTitle=openInvoice;
+openInvoice=function(id){
+  baseOpenInvoiceWithTitle(id);
+  const invoice=data.invoices.find(item=>item.id===id);if(!invoice)return;
+  const paid=invoicePaid(invoice),balance=invoiceBalance(invoice),payments=data.invoicePayments.filter(payment=>payment.invoiceId===id).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  const grandTotal=$('.invoice-summary .grand-total');
+  grandTotal?.insertAdjacentHTML('afterend',`<div><span>Amount paid</span><b class='amount-in'>${money(paid)}</b></div>`);
+  if(payments.length)$('.invoice-footer')?.insertAdjacentHTML('beforebegin',`<div class='invoice-payment-history'><small>PAYMENT HISTORY</small>${payments.map(payment=>`<div><span>${prettyDate(payment.date)} · ${escapeHtml(payment.method||'Payment')}${payment.reference?` · ${escapeHtml(payment.reference)}`:''}</span><b>${money(payment.amount)}</b></div>`).join('')}</div>`);
+  if(balance>0){$('.invoice-action-stack')?.insertAdjacentHTML('afterbegin',`<button class='secondary' id='record-invoice-payment'>Record Payment</button>`);$('#record-invoice-payment').onclick=()=>openInvoicePayment(id)}
+};
+
+openInvoicePayment=function(id){
+  const invoice=data.invoices.find(item=>item.id===id);if(!invoice)return;
+  const balance=invoiceBalance(invoice);if(balance<=0)return toast('This invoice is already fully paid');
+  openSheet('Record invoice payment',formWrap(`${field('Amount paid','amount','number','',`step='0.01' min='0.01' max='${balance}' required autofocus`)}${field('Payment date','date','date',today,'required')}${selectField('Payment method','method',options(['Mobile Money','Bank transfer','Cash','Card','Other']))}${field('Payment reference','reference','text','',`placeholder='Optional transaction reference'`,'full')}`,'Save Payment'));
+  $('.close-form').onclick=closeSheet;
+  $('.form').onsubmit=event=>{event.preventDefault();const values=Object.fromEntries(new FormData(event.target)),amount=Number(values.amount);if(!Number.isFinite(amount)||amount<=0)return toast('Enter a valid payment amount');if(amount>invoiceBalance(invoice))return toast(`Payment cannot exceed ${money(invoiceBalance(invoice))}`);data.invoicePayments.push({...values,id:uid('ip'),invoiceId:id,amount,createdBy:state.user,createdAt:new Date().toISOString()});invoice.status=invoiceBalance(invoice)<=0?'Paid':'Partially Paid';activity(`${customer(invoice.customerId).name} paid ${money(amount)} against ${invoice.number}.`);save();render();openInvoice(id);toast('Payment recorded and balance updated')};
 };
 
 ensureData();
